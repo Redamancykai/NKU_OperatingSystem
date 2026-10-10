@@ -50,7 +50,7 @@ WSL: Ubuntu-22.04
 |------|------------|---------|------|
 | 2411268-黄泽恺 | ChatGPT Work | GPT-6.1 Sol | - |
 | 2412414-黄子恒 | ChatGPT Work | GPT-6.1 Sol | - |
-| 2412677-郑奕杰 | | | |
+| 2412677-郑奕杰 | ChatGPT Work | GPT-6.1 Sol | - |
 
 **说明：**
 - **AI 编程工具**：指具体使用的终端工具、编辑器插件、桌面应用或浏览器界面
@@ -107,10 +107,12 @@ cprintf() 通过 SBI 服务输出启动信息
     `kern_init()` 首先执行 `memset(edata, 0, end - edata)`。其中，`edata` 和 `end` 由链接脚本定义，分别标记已初始化数据区域的结束位置和 BSS 区域的结束位置。清零这一区间，使未显式初始化的全局变量和静态变量满足 C 语言的初始零值要求。完成栈设置和 BSS 初始化后，内核即可继续调用输出函数，最终进入无限循环。
 
 3. 通过 SBI 实现格式化输出
-[说明从 cprintf() 到 SBI 调用的输出链，以及内核为何需要自行实现输出函数。]
+
+    `kern_init()` 调用 `cprintf("%s\n\n", message)` 输出启动信息。`cprintf()` 将可变参数传给 `vcprintf()`，由 `vprintfmt()` 解析格式字符串，再通过 `cputch()`、`cons_putc()` 和 `sbi_console_putchar()` 逐字符输出。`sbi_call()` 将服务编号和参数写入寄存器，通过 `ecall` 请求 OpenSBI 完成控制台输出。内核没有宿主 Linux 的标准库和系统调用环境，因此需要自行实现格式化与字符输出接口。
 
 4. 编译、运行并验证启动流程
-[说明交叉编译、链接、镜像生成与 QEMU 运行的过程，以及通过 GDB 验证启动流程的方法。]
+
+    在 `lab1/code` 目录执行 `make`，使用 RISC-V 交叉编译器将 C 和汇编源码编译为目标文件，再依据 `tools/kernel.ld` 链接生成 ELF 内核 `bin/kernel`，通过 `objcopy` 转换为裸二进制镜像 `bin/ucore.img`。执行 `make qemu`，由 QEMU 加载 OpenSBI 和内核镜像，观察启动信息。通过 `make debug` 配合 GDB 的断点、单步执行和寄存器检查，验证复位入口、固件交接、栈设置及进入 `kern_init()` 的过程。
 
 ---
 
@@ -238,9 +240,9 @@ info registers mstatus mepc
 | `tools/kernel.ld` | 入口符号、段布局、地址对齐 | 使用 `ENTRY(kern_entry)` 指定内核入口符号，以 `0x80200000` 为布局起始地址，安排 `.text`、`.rodata`、`.data`、`.sdata` 和 `.bss` 等段的位置，使链接布局与实际加载地址匹配。数据区域起始位置按 `0x1000` 字节进行页对齐。脚本还定义 `edata` 和 `end`，分别标记已初始化数据区域与 BSS 区域的结束位置，供 `kern_init()` 确定清零范围。 |
 | `kern/init/entry.S` | 栈空间定义、栈指针设置、入口跳转 | 定义汇编入口 `kern_entry`，在 `.data` 段中通过 `.space KSTACKSIZE` 预留启动栈，并按页对齐。`bootstack` 和 `bootstacktop` 分别标记栈空间的低地址起点和高地址边界。入口执行 `la sp, bootstacktop`，为向低地址增长的栈设置初始栈指针，再通过 `tail kern_init` 将控制权交给 C 初始化函数，为后续函数调用建立栈环境。 |
 | `kern/init/init.c` | `kern_init()` | 作为 C 语言编写的内核初始化入口，首先调用 `memset(edata, 0, end - edata)` 清零 BSS 区域，使未显式初始化的全局变量和静态变量具有初始零值；随后调用 `cprintf()` 输出启动信息，最后进入无限循环。函数声明了 noreturn 属性，与入口汇编直接移交控制权、不再返回的执行方式相配合。 |
-| `kern/libs/stdio.c`、`libs/printfmt.c` | 格式化输出及字符处理 | [填写分析] |
-| `kern/driver/console.c`、`libs/sbi.c` | 控制台封装与 SBI 调用 | [说明 `ecall` 与 OpenSBI 的关系] |
-| `Makefile` | 编译、链接、镜像生成及运行目标 | [填写分析] |
+| `kern/libs/stdio.c`、`libs/printfmt.c` | 格式化输出及字符处理 | `cprintf()` 接收格式字符串和可变参数，交给 `vcprintf()` 调用 `vprintfmt()` 进行格式解析。后者通过回调 `cputch()` 输出每个字符；`cputch()` 调用 `cons_putc()` 并累计字符数，最终由 `cprintf()` 返回输出字符数。 |
+| `kern/driver/console.c`、`libs/sbi.c` | 控制台封装与 SBI 调用 | `cons_putc()` 将字符传给 `sbi_console_putchar()`，后者调用 `sbi_call(1, ch, 0, 0)`。`sbi_call()` 将服务编号写入 `a7`，参数写入 `a0`、`a1`、`a2`，执行 `ecall` 从 S 模式内核请求 M 模式的 OpenSBI 服务，并从 `a0` 读取返回值。内核负责格式化，OpenSBI 负责底层控制台服务。 |
+| `Makefile` | 编译、链接、镜像生成及运行目标 | 配合 `tools/function.mk` 收集 `.c` 和 `.S` 源码，使用 `riscv64-unknown-elf-gcc` 生成 `obj/` 下的目标文件；使用 `ld -T tools/kernel.ld` 链接为 `bin/kernel`，再用 `objcopy --strip-all -O binary` 生成 `bin/ucore.img`。`qemu` 目标通过 `-kernel` 加载镜像，`debug` 目标增加 `-s -S` 供 GDB 连接。 |
 
 ---
 
@@ -251,17 +253,25 @@ info registers mstatus mepc
 **执行命令：**
 
 ```bash
-make
+make clean
+make V= -j1
+echo "make exit=$?"
 make qemu
 ```
 
 **实际结果：**
 
-[记录编译是否成功、内核是否输出启动信息，以及输出后进入无限循环的现象。]
+干净构建成功，`make V= -j1` 返回码为 0，生成 `bin/kernel` 和 `bin/ucore.img`。`readelf` 验证内核为 RISC-V 架构的 ELF64 可执行文件，入口地址为 `0x80200000`。
+
+执行 `make qemu` 后，OpenSBI v1.8 显示 `Next Address = 0x80200000`、`Next Mode = S-mode`，随后输出 `(THU.CST) os is loading ...`。输出后不再出现新信息，内核进入预期的无限循环，循环状态由 5.2 的 GDB 观察验证。最后按 Ctrl+A，再按 X 受控退出 QEMU。
 
 **编译与运行截图：**
 
-[在此插入实际截图。]
+![编译成功](images/01_build.png)
+
+![OpenSBI 启动信息](images/03_qemu_1.png)
+
+![内核启动输出](images/03_qemu_2.png)
 
 ### 5.2 启动流程调试验证
 
@@ -328,12 +338,18 @@ SP 与 `bootstacktop` 地址一致，确认内核栈建立成功。本次 `la` �
 
 ### 5.3 遇到的问题与解决方法
 
-**成员 B 实际记录（其他成员的问题可在整合时追加）：**
+**黄子恒 实际记录（其他成员的问题可在整合时追加）：**
 
 | 问题 | 原因分析或观察 | 处理与验证 |
 |---|---|---|
 | 原始启动参数不能进入内核 | OpenSBI v1.3 显示 `Next Address = 0`；loader 装载位置没有使当前默认固件获得正确的下一阶段入口。 | 先用 `-kernel bin/ucore.img` 验证，再将 Makefile 的 qemu、debug 两处改为 `-kernel $(UCOREIMG)`，debug 保留 `-s -S`。普通运行显示 `Next Address = 0x80200000` 和内核消息。 |
 | 数据被显示为 unimp 等指令 | `x/8i` 将复位代码后面的数据强行反汇编。 | 用 `x/2gx 0x1018` 查看数据，确认固件入口和设备树指针。 |
+
+**郑奕杰 实际记录：**
+
+| 问题 | 原因分析或观察 | 处理与验证 |
+|---|---|---|
+| 郑奕杰 复现原始 loader 参数时没有启动信息 | OpenSBI v1.8 显示 `Next Address = 0`；`-device loader` 仅装载镜像，未向默认固件提供正确的下一阶段入口。 | 使用当前仓库已有的 `-kernel bin/ucore.img` 参数运行，观察到 `Next Address = 0x80200000` 和 `(THU.CST) os is loading ...`，验证现有修复有效。 |
 
 ---
 
