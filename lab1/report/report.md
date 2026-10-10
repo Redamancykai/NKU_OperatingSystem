@@ -165,7 +165,69 @@ cprintf() 通过 SBI 服务输出启动信息
 
 **负责人：** 2412414-黄子恒
 
-[按照练习的具体要求进行解答]
+**1. 调试准备与命令**
+
+在项目根目录的两个 WSL 终端分别运行 `make debug` 和 `gdb-multiarch -q bin/kernel`。前者的 `-S` 让 CPU 在执行第一条指令前暂停，`-s` 开启端口 1234 的调试服务。GDB 中执行：
+
+```gdb
+set pagination off
+set architecture riscv:rv64
+set logging file gdb_boot_current.log
+set logging overwrite on
+set logging enabled on
+target remote localhost:1234
+info registers pc
+x/8i $pc
+info registers a0 a1 a2 t0
+x/2gx 0x1018
+```
+
+连接后 `pc = 0x1000`，`a0`、`a1`、`a2`、`t0` 均为零，停在复位代码第一条指令之前。
+
+**2. 最初指令的地址与功能**
+
+在本次 Lab1 实验中，QEMU 模拟的 RISC-V 计算机启动时，CPU 会从内存地址 0x1000 开始读取并执行第一条机器指令，复位地址`0x1000`。OpenSBI 入口为 `0x80000000`。我们逐条使用 `si`，并通过 `info registers pc` 和相关寄存器检查结果：
+
+| 地址 | 实际指令 | 功能及单步后的观察 |
+|---|---|---|
+| `0x1000` | `auipc t0,0x0` | 将当前指令地址写入 `t0`，得到 `t0 = 0x1000`。 |
+| `0x1004` | `addi a2,t0,40` | `a2 = 0x1028`，指向传给固件的动态启动信息。 |
+| `0x1008` | `csrr a0,mhartid` | 读取硬件线程编号，本次 `a0 = 0`。 |
+| `0x100c` | `ld a1,32(t0)` | 从 `0x1020` 读取设备树指针，`a1 = 0x87e00000`。 |
+| `0x1010` | `ld t0,24(t0)` | 从 `0x1018` 读取固件入口，`t0 = 0x80000000`。 |
+| `0x1014` | `jr t0` | 跳转至 `0x80000000`，进入 OpenSBI。 |
+
+`x/2gx 0x1018` 读到 `0x0000000080000000` 和 `0x0000000087e00000`，分别为固件入口和设备树地址。`x/8i` 显示的 `0x1018`、`0x101a` 处 `unimp` 等内容是把数据反汇编的结果。
+
+六次单步的 PC 路径为：
+
+```text
+0x1000 → 0x1004 → 0x1008 → 0x100c → 0x1010 → 0x1014 → 0x80000000
+```
+
+复位指令主要准备启动参数并跳转到固件，并未在此完成全部设备初始化。OpenSBI 入口前三条指令将 `a0–a2` 保存至 `s0–s2`，随后 `jal 0x80000580` 调用固件内部代码。由于只加载内核 ELF 符号，固件位置会显示 `?? ()` 。
+
+**3. 固件向内核交接**
+
+停在 OpenSBI 入口后执行：
+
+```gdb
+hbreak *0x80200000
+continue
+info registers pc a0 a1 sp
+x/6i $pc
+info registers mstatus mepc
+```
+
+硬件执行断点命中 `kern_entry`，定位到 `kern/init/entry.S:7` 的 `la sp, bootstacktop`。此时 `pc = 0x80200000`，内核第一条指令尚未执行；`a0 = 0`、`a1 = 0x87e00000`，`sp = 0x80046eb0`，`mepc = 0x80200000`。内核仍使用固件留下的 SP，尚未建立自己的栈。
+
+普通运行时 OpenSBI 横幅中的 `Next Address = 0x80200000`、`Next Mode = S-mode` 与入口断点相互印证。OpenSBI 在 M 模式完成初始化后将控制权交给 S 模式内核。本次用 `continue` 跳过固件内部初始化，没有逐条观察最终 `mret`；交接后的 `mstatus.MPP = 0` 不能单独用于判断当前运行模式。
+
+**4. 装载与执行的区别及结论**
+
+本次使用 `-kernel bin/ucore.img`，由 QEMU 在 CPU 执行前装载内核并向默认固件提供下一阶段信息，OpenSBI 负责初始化和执行控制权交接。
+
+实测启动链为 `0x1000（复位 ROM）→ 0x80000000（OpenSBI）→ 0x80200000（kern_entry）`。初始指令准备 hart 编号、设备树和动态启动信息并进入固件；入口断点证明固件初始化后 CPU 已到达内核第一条指令。补充栈设置和 C 初始化观察见 5.2。
 
 ---
 
@@ -203,21 +265,75 @@ make qemu
 
 ### 5.2 启动流程调试验证
 
-**验证内容：**
+**负责人：** 2412414-黄子恒
 
-- CPU 初始 PC 与复位入口指令。
-- 从复位代码进入 OpenSBI。
-- 在 `0x80200000` 处停下并确认内核入口。
-- 栈指针设置后的值与 `bootstacktop` 地址一致。
-- 从入口汇编进入 `kern_init()`。
+本次使用 QEMU 与 GDB 联合调试，先在复位入口观察初始指令，再单步进入 OpenSBI，并通过硬件执行断点验证 CPU 到达内核入口。随后补充观察栈设置、进入 C 初始化函数和无限循环状态。
 
-**关键调试截图或日志：**
+**1. 连接 GDB，观察复位入口**
 
-[在此插入实际截图或 GDB 输出，并配上简短说明。]
+在两个 WSL 终端分别执行 `make debug` 和 `gdb-multiarch -q bin/kernel`，连接 `localhost:1234`。使用 `info registers pc`、`x/8i $pc` 和寄存器检查命令，观察到初始 `pc = 0x1000`，`a0`、`a1`、`a2`、`t0` 均为零。
+
+![图 1：复位入口、最初六条指令与初始寄存器](images/reset-entry.png)
+
+*图 1：CPU 初始 PC、复位指令、寄存器初值及固件入口和设备树指针。*
+
+前六条复位指令准备 hart 编号、设备树地址和动态启动信息，然后跳转到固件。`0x1018` 开始是数据，不能将反汇编显示的 `unimp` 当作启动路径中的实际指令。指令功能详见 4.2。
+
+**2. 单步进入 OpenSBI，再命中内核入口**
+
+执行 `x/2gx 0x1018` 读到固件入口 `0x80000000` 和设备树地址 `0x87e00000`。六次 `si` 后 PC 到达 `0x80000000`，验证复位代码进入 OpenSBI。随后设置 `hbreak *0x80200000` 并执行 `continue`，GDB 命中 `kern_entry`，定位到 `entry.S:7`。
+
+![复位代码单步执行过程](images/复位地址到内核入口.png)
+
+*逐条执行复位代码，观察 PC 与启动参数的变化，最终准备跳转至 0x80000000。*
+
+![单步进入 OpenSBI 入口](images/内核入口处.png)
+
+*执行 jr t0 后 PC 为 0x80000000，此处是 OpenSBI 入口，并非 0x80200000 的内核入口。*
+
+以下为原始 GDB 日志中的关键输出节选：
+
+```text
+Hardware assisted breakpoint 1 at 0x80200000: file kern/init/entry.S, line 7.
+Breakpoint 1, kern_entry () at kern/init/entry.S:7
+7    la sp, bootstacktop
+pc             0x80200000 <kern_entry>
+sp             0x80046eb0
+mepc           0x80200000
+```
+
+断点处 `pc = 0x80200000`，第一条内核指令尚未执行；`a0 = 0`、`a1 = 0x87e00000`，`sp = 0x80046eb0`，`mepc = 0x80200000`。此时 SP 仍为固件留下的值。复位单步、固件入口和内核断点的完整实际输出见 [本次 GDB 原始日志](logs/gdb_boot_current.log)。
+
+**3. 验证内核栈设置与进入 kern_init()**
+
+执行 `p/x &bootstacktop` 得到 `0x80203000`。继续单步执行入口汇编，检查 PC 与 SP：第一条机器指令后 `pc = 0x80200004`、`sp = 0x80203000`；第二条后 `pc = 0x80200008`、SP 保持不变；第三次单步后 `pc = 0x8020000a`，进入 `kern_init()`，定位到 `init.c:8` 的 `memset` 语句。
+
+![图 2：栈顶查询、栈指针设置与进入 C 初始化函数](images/stack-and-kern-init.png)
+
+*图 2：SP 与栈顶地址一致，单步执行入口跳转后进入 kern_init()。*
+
+SP 与 `bootstacktop` 地址一致，确认内核栈建立成功。本次 `la` 展开为 `auipc sp,0x3` 与 `addi sp,sp,0`，后者显示为 `mv sp,sp`；`tail kern_init` 被链接优化为直接跳转。SP 后显示 `<SBI_CONSOLE_PUTCHAR>` 是同地址的数据符号提示，不影响栈顶数值的验证。
+
+**4. 观察初始化后的无限循环**
+
+在 `kern_init()` 中执行 `continue`，随后按 Ctrl+C 暂停，执行 `info registers pc` 和 `x/3i $pc`。结果定位到 `init.c:12` 的 `while (1)`，`pc = 0x8020003a`，该处指令跳转回自身。
+
+![图 3：暂停内核后观察 while (1) 与自跳转指令](images/kernel-loop.png)
+
+*图 3：人为暂停后，PC 位于无限循环的自跳转指令。*
+
+这证明内核执行到预期无限循环；SIGINT 是人为暂停请求。该状态不能单独证明字符显示成功，本次调试未观察到启动消息，不据此宣称输出验证成功。此前普通 `make qemu` 的启动消息与本次调试结果分别记录。图 2、图 3 的文字转录见 [现场截图转录](logs/member_b_supplement_transcript.md)。
+
+**验证结论：** 已实测复位入口、进入 OpenSBI、到达内核第一条指令、建立内核栈、进入 C 初始化函数以及最终循环状态，形成完整的启动调试证据链。
 
 ### 5.3 遇到的问题与解决方法
 
-[如实记录实际遇到的问题、原因分析及解决过程；若未遇到问题，可删除本小节。]
+**成员 B 实际记录（其他成员的问题可在整合时追加）：**
+
+| 问题 | 原因分析或观察 | 处理与验证 |
+|---|---|---|
+| 原始启动参数不能进入内核 | OpenSBI v1.3 显示 `Next Address = 0`；loader 装载位置没有使当前默认固件获得正确的下一阶段入口。 | 先用 `-kernel bin/ucore.img` 验证，再将 Makefile 的 qemu、debug 两处改为 `-kernel $(UCOREIMG)`，debug 保留 `-s -S`。普通运行显示 `Next Address = 0x80200000` 和内核消息。 |
+| 数据被显示为 unimp 等指令 | `x/8i` 将复位代码后面的数据强行反汇编。 | 用 `x/2gx 0x1018` 查看数据，确认固件入口和设备树指针。 |
 
 ---
 
