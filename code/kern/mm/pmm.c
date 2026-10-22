@@ -137,6 +137,12 @@ void pmm_init(void) {
     // use pmm->check to verify the correctness of the alloc/free function in a pmm
     check_alloc_page();
 
+#if defined(PMM_BEST_FIT)
+    /* Member B: extra tests are linked only for the Best-Fit build. */
+    extern void best_fit_run_extra_checks(void);
+    best_fit_run_extra_checks();
+#endif
+
     extern char boot_page_table_sv39[];
     satp_virtual = (pte_t*)boot_page_table_sv39;
     satp_physical = PADDR(satp_virtual);

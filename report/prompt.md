@@ -143,6 +143,223 @@ static void page_init(void);
 
 # 功能模块二：物理内存分配功能
 
+## 任务：Best-Fit 实现与补充测试
+
+### 负责人：黄子恒 2412414
+
+[PROMPT]
+
+**任务**：在'`kern/mm/best_fit_pmm.c`'中标有`//lab2 function2-2 YOUR CODE`的位置实现接入
+Best-Fit 连续物理页分配器，并注册`best_fit_pmm_manager`，能够被上层调用，能替换当前内核使用的First-Fit物理内存管理器。
+
+**对应会涉及两个文件**：
+
+1. `code/kern/mm/best_fit_pmm.c`：
+在 `lab2 function2-2 YOUR CODE` 标记处补齐分配器内部状态、初始化、空闲区注册、分配、释放、空闲页计数和管理器注册（具体实现和First-Fit里的步骤相似）
+
+2. `code/kern/mm/pmm.c`：
+选择 `best_fit_pmm_manager`，能替换当前内核使用的First-Fit物理内存管理器。
+
+**操作要求**：
+
+- 必须修改项目中的实际文件，而不是仅展示代码片段。
+- 先阅读工程真实代码，再完成实现。
+- 保留 `basic_check()`、`best_fit_check()` 两个原有测试函数，不得修改其内容。
+- 保留黄泽恺已完成的 `page_init()`。
+- 保留 `default_pmm.c` 中的现有代码及学习注释。
+- 不修改已有接口、头文件中的结构体。
+- 保留本任务的 lab2 注释，将 `YOUR CODE` 替换为学号 2412414。
+- 不实现其他无关功能。
+- 你需要自行设计Best-Fit分配器的内部状态和相关管理函数，并定义'`best_fit_pmm_manager`'完成注册。
+
+**输出要求**：
+
+直接在标记位置写入完整的实现，保留文件中的现有代码与测试函数。
+依据以下 RELY、GUARANTEE 和 SPECIFICATION 完成实际文件修改。
+实现必须符合'`basic_check()`'和'`best_fit_check()`'所依赖的状态约定，能通过这两个测试函数并且正常编译运行。
+实现后需要在'`kern/mm/pmm.c`'的`init_pmm_manager()`'中把`pmm_manager`指向`best_fit_pmm_manager`，实现best_fit在内核中的运行。
+未执行的检查必须明确标注，不得把预期结果当作实际结果。
+
+[RELY]
+
+参考 `kern/mm/default_pmm.c` 的 First-Fit 实现。
+现有接口和数据结构以 `pmm.h`、`memlayout.h`、`list.h` 为准。
+
+**`struct pmm_manager` 已定义以下成员**：
+
+```c
+const char *name;
+void (*init)(void);
+void (*init_memmap)(struct Page *base, size_t n);
+struct Page *(*alloc_pages)(size_t n);
+void (*free_pages)(struct Page *base, size_t n);
+size_t (*nr_free_pages)(void);
+void (*check)(void);
+```
+
+**`struct Page` 中**：
+
+- `ref`：页面引用计数。
+- `flags`：页面状态。
+- `property`：空闲块首页记录的连续页数。
+- `page_link`：空闲链表节点。
+
+`free_area_t` 包含 `free_list` 和 `nr_free`，分别表示空闲链表头和
+空闲页总数。已有测试直接访问并保存、恢复这两个状态，必须兼容。
+
+**可使用已有的**：
+
+- `PageReserved`、`PageProperty` 及相应 `Set/Clear` 宏；
+- `list_init`、`list_empty`、`list_next`、`list_prev`、`list_add_before`、`list_del` 等链表操作；
+- `le2page`、`set_page_ref`、`assert`。
+
+`page_init()` 会将仍处于保留状态的连续可用页，
+通过 `init_memmap(base, n)` 交给当前管理器。
+
+[GUARANTEE]
+
+**在 `best_fit_pmm.c` 中实现**：
+
+```c
+static void best_init(void);
+static void best_init_memmap(struct Page *base, size_t n);
+static struct Page *best_alloc_pages(size_t n);
+static void best_free_pages(struct Page *base, size_t n);
+static size_t best_nr_free_pages(void);
+
+const struct pmm_manager best_fit_pmm_manager;
+```
+
+**提供与测试兼容的状态**：
+
+```c
+static free_area_t free_area;
+#define free_list (free_area.free_list)
+#define nr_free (free_area.nr_free)
+```
+
+管理器 name 为 "`best_fit_pmm_manager`"，各接口绑定对应实现，check 绑定原有 `best_fit_check()`。
+
+**修改 `pmm.c` 中**：
+
+```c
+static void init_pmm_manager(void);
+```
+
+使其选择 `best_fit_pmm_manager`，保留名称输出和初始化调用。
+允许新增模块内部的 static 辅助函数和内部宏；
+不修改公开接口及 `basic_check()`、`best_fit_check()`测试检查。
+
+[SPECIFICATION]
+
+**共同状态约束**
+
+所有正常完成的操作均应保持：
+
+- 空闲链表结构有效，按块起始物理地址递增排列。
+- 各空闲块互不重叠，每个块首页仅登记一次。
+- 首页标志及块长度正确，块内非首页不设置 PG_property。
+- 物理相邻的空闲块合并为一个块。
+- 各空闲块页数之和等于 nr_free。
+- 保留页和仍被调用者使用的页面不属于空闲资源。
+
+**best_init**
+
+**Pre-Condition**：
+管理器尚未登记页面，没有需要保留的活动分配。
+
+**Post-Condition**：
+空闲链表初始化为空，nr_free 为 0，可接收后续空闲区注册。
+
+**best_init_memmap**
+
+**Pre-Condition**：
+管理器已初始化，n > 0；base 起的 n 个描述符有效、连续，
+对应页面处于保留状态，且未被登记到分配器。
+
+**Post-Condition**：
+输入页面解除保留，引用计数清零，成为可分配资源；
+正确登记空闲块并合并物理相邻块，nr_free 增加 n，
+区间外的页面不受影响。
+
+**best_alloc_pages**
+
+**Pre-Condition**：
+管理器状态有效，正常调用要求 n > 0。
+
+**Post-Condition**：
+正常返回后，页面状态、空闲链表和计数保持一致，
+其他活动分配不受影响。
+
+**Case 1：存在合适空闲块**
+选择页数不少于 n 的最小块，大小相同时选择低地址块。
+返回其前部连续 n 页的首页描述符；返回区间不再属于空闲资源，
+剩余部分继续可分配，nr_free 减少 n。
+
+**Case 2：不存在合适空闲块**
+返回 NULL，不改变页面状态、链表或计数。
+总空闲页数足够，但没有足够大的单个连续块时，也应失败。
+
+**Requirements**：
+n == 0 属于非法调用，应触发断言；
+它与资源不足时正常返回 NULL 的情况不同。
+
+**best_free_pages**
+
+**Pre-Condition**：
+管理器状态有效，n > 0；base 起的 n 页由调用者合法持有且已停止
+使用，不包含保留页，也不与现有空闲区重叠。
+
+**Post-Condition**：
+输入页面重新成为空闲资源，引用计数清零，nr_free 增加 n。
+无论两侧均不相邻、仅一侧相邻或两侧均相邻，都正确登记并合并；
+结果块的首页、长度和链表关系满足共同约束。
+
+**Requirements**：
+合并不重复增加空闲页数。
+零页释放及可直接识别的非法页面状态应触发断言；
+不要求实现完整的分配历史追踪或任意野指针检测。
+
+**best_nr_free_pages**
+
+**Pre-Condition**：
+管理器已初始化且状态有效。
+
+**Post-Condition**：
+返回当前空闲页总数，不修改管理器状态。
+
+**管理器注册与内核接入**
+
+`best_fit_pmm_manager` 各成员正确绑定。
+选择 `PMM=best_fit` 时，初始化流程输出正确管理器名称，
+先初始化其内部状态，再注册可用页面，随后执行原有自检。
+其他管理器的构建和运行不受影响。
+
+**模块验证要求**
+
+保留并执行原有两个测试函数。分析已有覆盖后，新增独立测试，
+至少验证：
+
+- 无精确匹配时，从多个合适块中选择最小者；
+- 精确匹配，以及同大小候选的低地址优先；
+- 整块分配与拆分后的剩余块；
+- 总量不足、连续块不足时失败且状态不变；
+- 空表及不同位置插入；
+- 无合并、单向合并和双向合并；
+- 重复分配回收后的链表一致性和页面资源恢复。
+
+各用例说明初始布局、操作、预期结果和断言依据。
+测试仅使用合法取得的资源，结束后恢复资源和管理状态，
+不影响原有自检或后续运行。
+
+使用当前环境完成编译和内核运行，确认实际选择 Best-Fit，
+原有自检和补充测试均通过。可以额外使用代码包的评分脚本，
+但不能用评分结果代替算法行为验证。
+
+记录实际命令、结果、遇到的问题及处理方法，
+说明补充测试能够发现哪些原有测试未覆盖的错误。
+不得修改测试期望或伪造输出使检查通过。
+
 ## 任务三：Buddy System
 
 ### 负责人：郑奕杰 2412677
