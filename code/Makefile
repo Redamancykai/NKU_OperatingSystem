@@ -27,7 +27,19 @@ endif
 HOSTCC		:= gcc
 HOSTCFLAGS	:= -Wall -O2
 
-GDB		:= $(GCCPREFIX)gdb
+GDB         ?= $(shell command -v $(GCCPREFIX)gdb 2>/dev/null || echo gdb-multiarch)
+
+# lab2 function2-3 2412677: isolate outputs and compile only the selected PMM.
+PMM         ?= buddy
+ifeq ($(filter $(PMM),buddy default best_fit),)
+$(error PMM must be buddy, default, or best_fit)
+endif
+DEFS        += -DPMM_$(shell echo $(PMM) | tr a-z A-Z)
+MMU_DEBUG   ?= 0
+ifeq ($(MMU_DEBUG),1)
+DEFS        += -DMMU_DEBUG
+BUILD_SUFFIX := -debug
+endif
 
 CC		:= $(GCCPREFIX)gcc
 CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
@@ -53,8 +65,8 @@ SH		:= sh
 TR		:= tr
 TOUCH	:= touch -c
 
-OBJDIR	:= obj
-BINDIR	:= bin
+OBJDIR	:= ../tmp/build/$(PMM)$(BUILD_SUFFIX)/obj
+BINDIR	:= ../tmp/build/$(PMM)$(BUILD_SUFFIX)/bin
 
 ALLOBJS	:=
 ALLDEPS	:=
@@ -109,10 +121,14 @@ KSRCDIR		+= kern/init \
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
 
+KFILES = $(filter-out kern/mm/default_pmm.c kern/mm/best_fit_pmm.c kern/mm/buddy_pmm.c kern/mm/buddy_test.c,$(call listf_cc,$(KSRCDIR))) kern/mm/$(PMM)_pmm.c
+ifeq ($(PMM),buddy)
+KFILES += kern/mm/buddy_test.c
+endif
 ifeq ($(MAKECMDGOALS),test)
-$(call add_files_cc2,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
+$(call add_files_cc2,$(KFILES),kernel,$(KCFLAGS))
 else
-$(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
+$(call add_files_cc,$(KFILES),kernel,$(KCFLAGS))
 endif
 KOBJS	= $(call read_packet,kernel libs)
 
@@ -165,19 +181,19 @@ qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(UCOREIMG),addr=0x80200000
+		-kernel $(UCOREIMG)
 
 debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(UCOREIMG),addr=0x80200000\
+		-kernel $(UCOREIMG)\
 		-s -S
 
 gdb:
-	riscv64-unknown-elf-gdb \
-    -ex 'file bin/kernel' \
+	$(GDB) \
+    -ex 'file $(kernel)' \
     -ex 'set arch riscv:rv64' \
     -ex 'target remote localhost:1234'
 
@@ -186,7 +202,7 @@ test: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(UCOREIMG),addr=0x80200000
+		-kernel $(UCOREIMG)
 spike: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(SPIKE) $(UCOREIMG)
 
@@ -200,7 +216,7 @@ TOUCH_FILES		:=
 
 MAKEOPTS		:= --quiet --no-print-directory
 
-GRADE_TMP	:= /tmp/lab2_grade
+GRADE_TMP	:= $(abspath ../tmp/lab2_grade)
 
 grade:
 	$(V)$(MAKE) $(MAKEOPTS) clean

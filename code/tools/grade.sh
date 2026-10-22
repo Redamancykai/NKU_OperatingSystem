@@ -34,7 +34,7 @@ rm='rm -f'
 sed='sed'
 
 ## sym table / gdb / qemu
-sym_table='obj/kernel.sym'
+sym_table="$(make_print objdir)/kernel.sym"
 gdb="$(make_print GDB)"
 gdbport='1234'
 gdb_in="$(make_print GRADE_GDB_IN)"
@@ -222,7 +222,7 @@ osimg=$(make_print ucoreimg)
 swapimg=$(make_print swapimg)
 
 ## qemu-options
-qemuopts="-machine virt -nographic -bios default -device loader,file=bin/ucore.img,addr=0x80200000"
+qemuopts="-machine virt -nographic -bios default -kernel $osimg"
 
 ## the lab2 kernel only while(1) after entering kernel mode and never calls readline,
 ## so no break function is needed and brkfun stays empty
