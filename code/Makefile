@@ -27,14 +27,7 @@ endif
 HOSTCC		:= gcc
 HOSTCFLAGS	:= -Wall -O2
 
-GDB         ?= $(shell command -v $(GCCPREFIX)gdb 2>/dev/null || echo gdb-multiarch)
-
-# Select the allocator; the standard lab/grade run uses Best-Fit.
-PMM         ?= best_fit
-ifeq ($(filter $(PMM),buddy default best_fit),)
-$(error PMM must be buddy, default, or best_fit)
-endif
-DEFS        += -DPMM_$(shell echo $(PMM) | tr a-z A-Z)
+GDB		:= $(GCCPREFIX)gdb
 
 CC		:= $(GCCPREFIX)gcc
 CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
@@ -116,24 +109,12 @@ KSRCDIR		+= kern/init \
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
 
-KFILES = $(filter-out kern/mm/default_pmm.c kern/mm/best_fit_pmm.c kern/mm/buddy_pmm.c kern/mm/buddy_test.c,$(call listf_cc,$(KSRCDIR))) kern/mm/$(PMM)_pmm.c
-ifeq ($(PMM),buddy)
-KFILES += kern/mm/buddy_test.c
-endif
 ifeq ($(MAKECMDGOALS),test)
-$(call add_files_cc2,$(KFILES),kernel,$(KCFLAGS))
+$(call add_files_cc2,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 else
-$(call add_files_cc,$(KFILES),kernel,$(KCFLAGS))
+$(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
 endif
 KOBJS	= $(call read_packet,kernel libs)
-
-# Rebuild when PMM changes, while retaining the standard bin/ and obj/ paths.
-.PHONY: FORCE
-FORCE:
-$(OBJDIR)/.pmm-config: FORCE
-	@$(MKDIR) $(OBJDIR)
-	@if test "`cat $@ 2>/dev/null`" != "$(PMM)"; then echo "$(PMM)" > $@; fi
-$(KOBJS): $(OBJDIR)/.pmm-config
 
 # create kernel target
 kernel = $(call totarget,kernel)
@@ -184,19 +165,19 @@ qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)
+		-device loader,file=$(UCOREIMG),addr=0x80200000
 
 debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)\
+		-device loader,file=$(UCOREIMG),addr=0x80200000\
 		-s -S
 
-gdb: $(kernel)
-	$(GDB) \
-    -ex 'file $(kernel)' \
+gdb:
+	riscv64-unknown-elf-gdb \
+    -ex 'file bin/kernel' \
     -ex 'set arch riscv:rv64' \
     -ex 'target remote localhost:1234'
 
@@ -205,7 +186,7 @@ test: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)
+		-device loader,file=$(UCOREIMG),addr=0x80200000
 spike: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(SPIKE) $(UCOREIMG)
 
@@ -219,7 +200,7 @@ TOUCH_FILES		:=
 
 MAKEOPTS		:= --quiet --no-print-directory
 
-GRADE_TMP	:= $(abspath ../tmp/lab2_grade)
+GRADE_TMP	:= /tmp/lab2_grade
 
 grade:
 	$(V)$(MAKE) $(MAKEOPTS) clean
