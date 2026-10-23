@@ -31,10 +31,6 @@ int kern_init(void) {
     memset(edata, 0, end - edata);
     dtb_init();
     cons_init();  // init the console
-#ifdef MMU_DEBUG
-    extern void mmu_debug_probe(void);
-    mmu_debug_probe();
-#endif
     const char *message = "(THU.CST) os is loading ...\0";
     //cprintf("%s\n\n", message);
     cputs(message);

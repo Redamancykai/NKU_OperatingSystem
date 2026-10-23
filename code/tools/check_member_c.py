@@ -47,7 +47,7 @@ def host_checks():
 
 
 def boot(qemu, manager, ram):
-    image = ROOT / f'tmp/build/{manager}/bin/ucore.img'
+    image = ROOT / 'code/bin/ucore.img'
     args = [qemu, '-machine', 'virt', '-m', str(ram), '-nographic',
             '-bios', 'default', '-kernel', str(image)]
     process = subprocess.Popen(args, cwd=ROOT, text=True,
@@ -59,7 +59,8 @@ def boot(qemu, manager, ram):
         output, _ = process.communicate(timeout=5)
     path = EVIDENCE / f'qemu-{manager}-{ram}M.log'
     path.write_text('$ ' + ' '.join(map(str, args)) + '\n' + output, encoding='utf-8')
-    required = ['check_alloc_page() succeeded!',
+    required = [f'memory management: {manager}_pmm_manager',
+                'check_alloc_page() succeeded!',
                 '[SLUB] 3000 mixed-size allocations, no page leaks: PASS']
     if manager == 'buddy':
         required += ['[Buddy] real memory accounting: PASS']
@@ -81,10 +82,12 @@ def main():
     if args.host_only:
         return
     for manager in ['buddy', 'default']:
-        run(['make', '--jobserver-style=pipe', '-C', 'code', '-j2', f'PMM={manager}'],
+        run(['make', '-C', 'code', '-j1', f'PMM={manager}'],
             f'build-{manager}.log')
         for ram in (args.ram if manager == 'buddy' else [128]):
             boot(args.qemu, manager, ram)
+    # Leave the shared build ready for the default Best-Fit lab workflow.
+    run(['make', '-C', 'code', '-j1'], 'build-best_fit.log')
 
 
 if __name__ == '__main__':

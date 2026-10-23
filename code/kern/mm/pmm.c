@@ -35,13 +35,13 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
-    // lab2 function2-3 2412677: select at build time; default is Buddy.
+    // lab2 function2-3 2412677: optional allocator selection; default is Best-Fit.
 #if defined(PMM_DEFAULT)
     pmm_manager = &default_pmm_manager;
-#elif defined(PMM_BEST_FIT)
-    pmm_manager = &best_fit_pmm_manager;
-#else
+#elif defined(PMM_BUDDY)
     pmm_manager = &buddy_pmm_manager;
+#else
+    pmm_manager = &best_fit_pmm_manager;
 #endif
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();

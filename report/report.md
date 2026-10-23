@@ -746,7 +746,7 @@ static void init_pmm_manager(void);
 
 **功能说明：**
 
-`buddy_pmm.c` 实现伙伴分配器，`buddy_test.c` 提供独立测试。管理器通过 `buddy_pmm_manager` 注册六个回调，供已有 `alloc_pages()`、`free_pages()` 和 `nr_free_pages()` 转发调用。`init_pmm_manager()` 根据构建配置选择管理器；`PMM=buddy` 为当前默认配置，`PMM=default` 可选择原有 First-Fit。
+`buddy_pmm.c` 实现伙伴分配器，`buddy_test.c` 提供独立测试。管理器通过 `buddy_pmm_manager` 注册六个回调，供已有 `alloc_pages()`、`free_pages()` 和 `nr_free_pages()` 转发调用。`init_pmm_manager()` 根据构建配置选择管理器；默认配置为 Best-Fit，`PMM=buddy` 选择 Buddy，`PMM=default` 选择 First-Fit；构建产物位于 `code/bin` 和 `code/obj`。
 
 **1. 空闲块组织与初始化。**
 

@@ -29,17 +29,12 @@ HOSTCFLAGS	:= -Wall -O2
 
 GDB         ?= $(shell command -v $(GCCPREFIX)gdb 2>/dev/null || echo gdb-multiarch)
 
-# lab2 function2-3 2412677: isolate outputs and compile only the selected PMM.
-PMM         ?= buddy
+# Select the allocator; the standard lab/grade run uses Best-Fit.
+PMM         ?= best_fit
 ifeq ($(filter $(PMM),buddy default best_fit),)
 $(error PMM must be buddy, default, or best_fit)
 endif
 DEFS        += -DPMM_$(shell echo $(PMM) | tr a-z A-Z)
-MMU_DEBUG   ?= 0
-ifeq ($(MMU_DEBUG),1)
-DEFS        += -DMMU_DEBUG
-BUILD_SUFFIX := -debug
-endif
 
 CC		:= $(GCCPREFIX)gcc
 CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
@@ -65,8 +60,8 @@ SH		:= sh
 TR		:= tr
 TOUCH	:= touch -c
 
-OBJDIR	:= ../tmp/build/$(PMM)$(BUILD_SUFFIX)/obj
-BINDIR	:= ../tmp/build/$(PMM)$(BUILD_SUFFIX)/bin
+OBJDIR	:= obj
+BINDIR	:= bin
 
 ALLOBJS	:=
 ALLDEPS	:=
@@ -132,6 +127,14 @@ $(call add_files_cc,$(KFILES),kernel,$(KCFLAGS))
 endif
 KOBJS	= $(call read_packet,kernel libs)
 
+# Rebuild when PMM changes, while retaining the standard bin/ and obj/ paths.
+.PHONY: FORCE
+FORCE:
+$(OBJDIR)/.pmm-config: FORCE
+	@$(MKDIR) $(OBJDIR)
+	@if test "`cat $@ 2>/dev/null`" != "$(PMM)"; then echo "$(PMM)" > $@; fi
+$(KOBJS): $(OBJDIR)/.pmm-config
+
 # create kernel target
 kernel = $(call totarget,kernel)
 
@@ -191,7 +194,7 @@ debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-kernel $(UCOREIMG)\
 		-s -S
 
-gdb:
+gdb: $(kernel)
 	$(GDB) \
     -ex 'file $(kernel)' \
     -ex 'set arch riscv:rv64' \

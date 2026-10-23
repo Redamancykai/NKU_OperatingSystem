@@ -34,7 +34,7 @@ rm='rm -f'
 sed='sed'
 
 ## sym table / gdb / qemu
-sym_table="$(make_print objdir)/kernel.sym"
+sym_table='obj/kernel.sym'
 gdb="$(make_print GDB)"
 gdbport='1234'
 gdb_in="$(make_print GRADE_GDB_IN)"
@@ -130,6 +130,8 @@ run_qemu() {
         exec $qemu -nographic $qemuopts -serial file:$qemu_out -monitor null -no-reboot $qemuextra
     ) > $out 2> $err &
     pid=$!
+    # Reap only the QEMU process started by this grading run.
+    trap 'kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null' 0
 
     sleep 1
 
@@ -229,6 +231,17 @@ qemuopts="-machine virt -nographic -bios default -kernel $osimg"
 brkfun=
 
 run_qemu
+
+# A non-empty log may contain only OpenSBI output on slower filesystems.
+# Wait for the final test result, not merely for the first serial byte.
+waited=0
+while ! $grep -F '[Test 2] Best-Fit:' "$qemu_out" > /dev/null 2>&1; do
+    if [ "$waited" -ge "$timeout" ] || ! kill -0 "$pid" 2>/dev/null; then
+        break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+done
 
 ## check now!!
 

@@ -57,7 +57,7 @@ bootstacktop:
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
     # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    # lab2 debug 2412677: keep the current physical PC mapped between writing
+    # lab2 boot compatibility 2412677: keep the physical PC mapped between writing
     # satp and jumping to kern_init. Root entry 2 maps 0x80000000 identically.
     .zero 8 * 2
     .quad (0x80000 << 10) | 0xcf
