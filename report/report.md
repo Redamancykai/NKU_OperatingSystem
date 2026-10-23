@@ -984,11 +984,17 @@ check_alloc_page() succeeded!
 [Best-Fit extra] live free-page count restored: PASS
 ```
 
-![构建截图](report/images/sync-build-best_fit.png)
+![构建截图](images/sync-build-best_fit.png)
 
-### 5.3 现有测试与 Best-Fit 补充验证
+**原有测试。** 我们运行框架为我们提供的测试脚本，在工程的 `code/` 目录执行：
 
-**原有测试。** `basic_check()` 检查单页分配的唯一性、引用计数、耗尽时返回 NULL，以及释放后重新分配。`best_fit_check()` 进一步检查连续页分配、拆分、回收合并、空闲页计数，并验证存在精确匹配块时的选择结果。这两个函数保持原样，检查正常返回后输出 `check_alloc_page() succeeded!`。
+```bash
+make grade
+```
+
+结果如图所示：
+
+![make grade 运行截图](images/make_grade_test.png)
 
 **补充测试。** 为验证原有测试未充分覆盖的行为，先申请连续 32 页作为独立测试区域，暂存其余空闲资源，再构造以下布局。表中偏移相对于测试区首页，所有检查均通过断言完成。
 
@@ -1004,12 +1010,13 @@ check_alloc_page() succeeded!
 
 `best_test_state()` 还检查双向链表关系、地址顺序、块不重叠、首页标志和空闲总数。测试完成后恢复原空闲链表并归还全部测试页，避免测试影响后续内核运行。
 
-为检查补充测试是否有效，在独立副本中把策略改为“优先精确匹配，否则选择第一个合适块”。该错误实现能通过原有自检，却在 8、5、7 页块中申请 4 页的用例上触发断言，说明新增测试能够识别不完整的 Best-Fit 实现。详见 [辨错验证日志](member-2412414/mutation.log)。
+为检查补充测试是否有效，在独立副本中把策略改为“优先精确匹配，否则选择第一个合适块”。该错误实现能通过原有自检，却在 8、5、7 页块中申请 4 页的用例上触发断言，说明新增测试能够识别不完整的 Best-Fit 实现，详见下图。
 
+![断言截图](images/mutation.png)
 
-### 5.4 Buddy System／SLUB 自定义测试与边界验证
+### 5.2 Buddy System／SLUB 自定义测试与边界验证
 
-郑奕杰完成的自定义测试对应 4.2.3 和 4.2.4，使用 `python3 code/tools/check_member_c.py` 执行宿主及 QEMU 检查。宿主测试链接实际 Buddy、SLUB 源码，启用 ASan/UBSan；内核测试通过启动流程调用管理器与对象层自检。
+完成的自定义测试对应 4.2.3 和 4.2.4，使用 `python3 code/tools/check_member_c.py` 执行宿主及 QEMU 检查。宿主测试链接实际 Buddy、SLUB 源码，启用 ASan/UBSan；内核测试通过启动流程调用管理器与对象层自检。
 
 | 测试项目 | 实际结果 |
 |---|---|
@@ -1026,34 +1033,12 @@ check_alloc_page() succeeded!
 
 宿主与异常用例结果分别保存在 `report/evidence/host-tests.log` 和 `report/evidence/invalid-free-tests.log`；内核日志为 `report/evidence/qemu-buddy-32M.log`、`qemu-buddy-128M.log`、`qemu-buddy-256M.log`、`qemu-default-128M.log`，QEMU 4.1.1 日志为 `report/evidence/qemu41/qemu-buddy-128M.log`。
 
-### 5.5 结果汇总与辅助评分
-
-黄子恒的主要验证结果如下：
-
-| 检查项 | 结果 | 证据 |
-|---|---|---|
-| Best-Fit 完整工程编译与启动 | 成功进入 ucore，管理器选择正确 | [构建日志](member-2412414/sync-build-best_fit.log)、[启动日志](member-2412414/sync-boot-best_fit.log) |
-| 原有自检与补充测试 | 均通过，测试后页面资源恢复 | [测试输出](member-2412414/sync-boot-best_fit.log) |
-| 补充测试的辨错能力 | 错误策略被预期断言拒绝 | [辨错日志](member-2412414/mutation.log) |
-
-此外，使用代码包提供的 `make grade` 进行辅助检查。脚本包含物理页初始化和 Best-Fit 管理器选择两项，每项 10 分；它不能替代原有自检和补充测试，也不是手册单独要求完成的评分任务。
-
-在 Windows 挂载目录下运行时，原脚本曾在日志写完前判定缺少 PASS。保持脚本不变，将评分临时目录放到 WSL 的 Linux 文件系统后，执行：
-
-```bash
-make grade PMM=best_fit GRADE_TMP=/tmp/lab2-member-2412414-grade/code
-```
-
-两项检查均为 OK，得到 `Total Score: 20/20`，退出码为 0，见 [辅助评分日志](member-2412414/grade-original-linuxfs.log)。当前保留原版 `grade.sh`，没有修改测试内容或评分标准。
-
-### 5.6 实现与验证过程中遇到的问题
+### 5.3 实现与验证过程中遇到的问题
 
 | 问题 | 原因分析 | 处理与验证 |
 |---|---|---|
 | Best-Fit 补充测试需要与其他分配器共存 | 各分配器按 `PMM` 参数分别编译，Buddy 构建不会链接 Best-Fit 专用函数 | 补充测试入口仅在 `PMM_BEST_FIT` 下调用；Best-Fit 与 Buddy 均能独立编译和运行 |
 | 辅助评分显示 0/20，但稍后内核日志已有 PASS | 原脚本固定等待约 1 秒，Windows 挂载目录中的串口日志尚未写完；并发读取时还出现过 `No data available` | 对照测试中仅将评分临时目录改到 WSL `/tmp`，原脚本即获得 20/20，因此最终采用运行参数调整，不修改评分逻辑 |
-
-这些问题涉及模块接入和评分结果读取，不能直接归因于 Best-Fit 分配策略。对于算法本身，则通过返回地址、块大小、页面标志、空闲计数和资源恢复共同判断正确性。
 
 ---
 
