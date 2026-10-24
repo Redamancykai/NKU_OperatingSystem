@@ -1,0 +1,13 @@
+$ /mnt/c/Users/TwoJie/Desktop/nku/大三上/OS操作系统/lab2/NKU_OperatingSystem/tmp/remote-log-verification-20261024/source/tmp/alloc-host
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+[SLUB] size boundaries, alignment, contents, large objects: PASS
+[SLUB] multiple slabs, slot reuse, empty slab reclaim: PASS
+[SLUB] 3000 mixed-size allocations, no page leaks: PASS
+[SLUB] backing page exhaustion and recovery: PASS
+[Buddy] maximum order and request overflow: PASS
+SLUB host tests: PASS

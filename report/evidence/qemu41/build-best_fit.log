@@ -1,0 +1,21 @@
+$ ['make', '-C', 'code', '-j1']
+make: Entering directory '/mnt/c/Users/TwoJie/Desktop/nku/大三上/OS操作系统/lab2/NKU_OperatingSystem/tmp/remote-log-verification-20261024/source/code'
++ cc kern/init/entry.S
++ cc kern/init/init.c
++ cc kern/libs/stdio.c
++ cc kern/debug/panic.c
++ cc kern/driver/console.c
++ cc kern/driver/dtb.c
++ cc kern/mm/pmm.c
++ cc kern/mm/slub.c
++ cc kern/mm/slub_test.c
++ cc kern/mm/best_fit_pmm.c
++ cc libs/printfmt.c
++ cc libs/readline.c
++ cc libs/sbi.c
++ cc libs/string.c
++ ld bin/kernel
+riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+make: Leaving directory '/mnt/c/Users/TwoJie/Desktop/nku/大三上/OS操作系统/lab2/NKU_OperatingSystem/tmp/remote-log-verification-20261024/source/code'
+
+[exit=0]

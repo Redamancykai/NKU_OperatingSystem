@@ -1,0 +1,5 @@
+$ ['/mnt/c/Users/TwoJie/Desktop/nku/大三上/OS操作系统/lab2/NKU_OperatingSystem/tmp/qemu/build/riscv64-softmmu/qemu-system-riscv64', '--version']
+QEMU emulator version 4.1.1 (v4.1.1-dirty)
+Copyright (c) 2003-2019 Fabrice Bellard and the QEMU Project developers
+
+[exit=0]

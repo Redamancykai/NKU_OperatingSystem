@@ -1,0 +1,62 @@
+d: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/buddy_pmm.c:96: assertion failed: (base->flags & ALLOC_HEAD) && base->property == n
+
+s: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/buddy_pmm.c:96: assertion failed: (base->flags & ALLOC_HEAD) && base->property == n
+
+i: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/buddy_pmm.c:96: assertion failed: (base->flags & ALLOC_HEAD) && base->property == n
+
+r: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/buddy_pmm.c:103: assertion failed: !PageReserved(base + i) && page_ref(base + i) == 0
+
+j: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/slub.c:98: assertion failed: offset % object_size == 0
+
+l: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/slub.c:90: assertion failed: ptr == (char *)slab + HEADER_SIZE && slab->inuse == 1
+
+f: rejected as expected (exit 77)
+[Buddy] unaligned range, tail pages, exhaustion: PASS
+[Buddy] power-of-two rounding, split, recursive merge: PASS
+[Buddy] non-buddy fragmentation and recovery: PASS
+[Buddy] holes and adjacent range registration: PASS
+[Buddy] 4000 deterministic mixed operations: PASS
+Buddy host tests: PASS
+PANIC code/kern/mm/slub.c:102: assertion failed: slab->allocated[index / 64] & bit

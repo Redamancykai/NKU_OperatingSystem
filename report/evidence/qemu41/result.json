@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "required": [
+    "memory management: buddy_pmm_manager",
+    "[Buddy] real memory accounting: PASS",
+    "check_alloc_page() succeeded!",
+    "[SLUB] 3000 mixed-size allocations, no page leaks: PASS"
+  ]
+}
