@@ -138,7 +138,7 @@ void pmm_init(void) {
     check_alloc_page();
 
 #if defined(PMM_BEST_FIT)
-    /* Member B: extra tests are linked only for the Best-Fit build. */
+    /* Extra checks are linked only for Best-Fit builds. */
     extern void best_fit_run_extra_checks(void);
     best_fit_run_extra_checks();
 #endif
