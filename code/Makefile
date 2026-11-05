@@ -31,7 +31,7 @@ GDB		:= $(GCCPREFIX)gdb
 
 CC		:= $(GCCPREFIX)gcc
 CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
-CFLAGS	+= -fno-builtin -Wall -O2 -nostdinc $(DEFS)
+CFLAGS += -fno-builtin -Wall -O2 -nostdinc -Dsbadaddr=stval $(DEFS)
 CFLAGS	+= -fno-stack-protector -ffunction-sections -fdata-sections
 CFLAGS	+= -g
 CFLAGS2 = $(CFLAGS) -D ucore_test
