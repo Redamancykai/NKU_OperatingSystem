@@ -762,11 +762,11 @@ void exception_handler(struct trapframe *tf);
 
 **测试截图：**
 
-在 `code/` 目录执行 `make qemu`。图 1 记录了编译、链接、生成 `bin/ucore.img` 以及 QEMU 启动 OpenSBI 的过程。
+在 `code/` 目录执行 `make qemu`。内核完成时钟中断初始化后，每累计 100 次时钟中断就输出一行 `100 ticks`。图 1 中共输出 10 行，随后 QEMU 自动退出，终端回到命令提示符。这与累计 1000 次时钟中断后关机的预期一致。
 
-![make qemu 编译与启动输出](./images/qemu_run.png)
+![make qemu 时钟中断输出与自动退出](./images/qemu_run.png)
 
-图 1　内核镜像构建与 OpenSBI 启动
+图 1　连续输出 10 行 `100 ticks` 后自动退出
 
 随后在同一目录执行 `make grade`。图 2 至图 4 记录了本次评分的三个用例，均通过，总分为 100/100。
 
