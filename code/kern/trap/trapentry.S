@@ -1,8 +1,8 @@
 #include <riscv.h>
 
-    .macro SAVE_ALL
+    .macro SAVE_ALL  # 定义汇编宏，保存所有寄存器到栈顶
 
-    csrw sscratch, sp
+    csrw sscratch, sp  #保存原先的栈顶指针到sscratch
 
     addi sp, sp, -36 * REGBYTES
     # save x registers
@@ -58,6 +58,7 @@
 
     #lab3 function1 2411268
     # Restore the final return state before restoring the scratch registers.
+    # 恢复 sstatus 和 spec -> 恢复除 x0 和 sp 外的通用寄存器 -> 恢复 sp -> sret 返回 
     LOAD s0, 32*REGBYTES(sp)
     LOAD s1, 33*REGBYTES(sp)
     csrw sstatus, s0

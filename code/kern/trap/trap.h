@@ -39,11 +39,11 @@ struct pushregs {
 };
 
 struct trapframe {
-    struct pushregs gpr;
-    uintptr_t status;
-    uintptr_t epc;
-    uintptr_t badvaddr;
-    uintptr_t cause;
+    struct pushregs gpr; // 通用寄存器现场
+    uintptr_t status;    // Trap 返回时需要的处理器状态
+    uintptr_t epc;       // 返回时从哪里继续执行，存储指令PC
+    uintptr_t badvaddr;  // stval，附加信息
+    uintptr_t cause;     // 具体发生了什么中断或异常
 };
 
 void trap(struct trapframe *tf);

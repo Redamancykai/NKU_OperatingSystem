@@ -152,6 +152,7 @@ void exception_handler(struct trapframe *tf) {
 }
 
 static inline void trap_dispatch(struct trapframe *tf) {
+    // 最高位是0就是异常，最高位是1就是中断
     if ((intptr_t)tf->cause < 0) {
         // interrupts
         interrupt_handler(tf);
