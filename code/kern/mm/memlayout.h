@@ -37,6 +37,8 @@
 
 #define PHYSICAL_MEMORY_OFFSET      0xFFFFFFFF40000000
 
+#define PHYSICAL_MEMORY_END (KERNTOP - PHYSICAL_MEMORY_OFFSET)
+#define KERNEL_BEGIN_PADDR  (KERNBASE - PHYSICAL_MEMORY_OFFSET)
 
 #define KSTACKPAGE          2                           // # of pages in kernel stack
 #define KSTACKSIZE          (KSTACKPAGE * PGSIZE)       // sizeof kernel stack

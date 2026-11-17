@@ -1,4 +1,5 @@
 #include <default_pmm.h>
+#include <best_fit_pmm.h>
 #include <defs.h>
 #include <error.h>
 #include <kmalloc.h>
@@ -37,7 +38,7 @@ static void check_boot_pgdir(void);
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void)
 {
-    pmm_manager = &default_pmm_manager;
+    pmm_manager = &best_fit_pmm_manager;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -88,6 +89,57 @@ size_t nr_free_pages(void)
 }
 
 //lab2 请补充你在lab2中的代码
+//lab2 function1 2411268
+static void page_init(void) {
+    extern char end[];
+    uint64_t mem_base = get_memory_base();
+    uint64_t mem_size = get_memory_size();
+    uint64_t mem_end = mem_base + mem_size;
+
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
+    if (mem_base != DRAM_BASE || mem_size == 0 || mem_end < mem_base) {
+        panic("invalid physical memory range from DTB");
+    }
+
+    cprintf("physical memory map:\n");
+    cprintf("  memory: 0x%016lx, [0x%016lx, 0x%016lx].\n",
+            mem_size, mem_base, mem_end - 1);
+
+    // Manage only complete pages within the kernel's supported physical range.
+    uintptr_t maxpa = ROUNDDOWN(
+        mem_end < PHYSICAL_MEMORY_END ? mem_end : PHYSICAL_MEMORY_END, PGSIZE);
+    uintptr_t kernel_end_pa = PADDR((uintptr_t)end);
+    if (maxpa <= DRAM_BASE || kernel_end_pa < KERNEL_BEGIN_PADDR ||
+        kernel_end_pa > maxpa) {
+        panic("physical memory cannot contain the kernel");
+    }
+
+    npage = PPN(maxpa);
+    pages = (struct Page *)ROUNDUP((uintptr_t)end, PGSIZE);
+    uintptr_t pages_pa = PADDR((uintptr_t)pages);
+    size_t page_count = npage - nbase;
+
+    // Check the entire descriptor array before writing any of its entries.
+    if (pages_pa > maxpa ||
+        page_count > (maxpa - pages_pa) / sizeof(struct Page)) {
+        panic("not enough physical memory for page descriptors");
+    }
+
+    for (size_t i = 0; i < page_count; i++) {
+        struct Page *page = &pages[i];
+        page->flags = 0;
+        page->property = 0;
+        set_page_ref(page, 0);
+        SetPageReserved(page);
+    }
+
+    // Keep OpenSBI, the kernel, descriptors, and alignment gaps reserved.
+    uintptr_t freemem = ROUNDUP(
+        pages_pa + page_count * sizeof(struct Page), PGSIZE);
+    if (freemem < maxpa) {
+        init_memmap(pa2page(freemem), (maxpa - freemem) / PGSIZE);
+    }
+}
 
 static void enable_paging(void)
 {
