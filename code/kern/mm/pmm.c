@@ -272,13 +272,78 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
     return NULL;
 }
 
-//LAB4 function1 YOUR CODE
+//LAB4 function1 2411268
 
+static void sync_page_table(pde_t *pgdir, uintptr_t la, bool directory_changed)
+{
+    // The framework's SFENCE.VMA helpers do not include compiler barriers.
+    asm volatile("" ::: "memory");
+    if (directory_changed)
+    {
+        flush_tlb();
+    }
+    else
+    {
+        tlb_invalidate(pgdir, la);
+    }
+    asm volatile("" ::: "memory");
+}
 
+int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
+{
+    pte_t *ptep;
+    struct Page *old_page = get_page(pgdir, la, &ptep);
+    bool directory_changed = ptep == NULL;
 
+    if (directory_changed)
+    {
+        pde_t *root_entry = &pgdir[PDX1(la)];
+        pde_t saved_entry = *root_entry;
+        ptep = get_pte(pgdir, la, 1);
+        if (ptep == NULL)
+        {
+            // The first page-table allocation can succeed before the second fails.
+            if (!(saved_entry & PTE_V) && (*root_entry & PTE_V))
+            {
+                struct Page *table_page = pde2page(*root_entry);
+                *root_entry = saved_entry;
+                sync_page_table(pgdir, la, 1);
+                free_page(table_page);
+            }
+            return -E_NO_MEM;
+        }
+    }
 
+    if (old_page != page)
+    {
+        page_ref_inc(page);
+    }
+    *ptep = pte_create(page2ppn(page), perm);
+    sync_page_table(pgdir, la, directory_changed);
 
+    if (old_page != NULL && old_page != page && page_ref_dec(old_page) == 0)
+    {
+        free_page(old_page);
+    }
+    return 0;
+}
 
+void page_remove(pde_t *pgdir, uintptr_t la)
+{
+    pte_t *ptep;
+    struct Page *page = get_page(pgdir, la, &ptep);
+    if (page == NULL)
+    {
+        return;
+    }
+
+    *ptep = 0;
+    sync_page_table(pgdir, la, 0);
+    if (page_ref_dec(page) == 0)
+    {
+        free_page(page);
+    }
+}
 
 // invalidate a TLB entry, but only if the page tables being
 // edited are the ones currently in use by the processor.
