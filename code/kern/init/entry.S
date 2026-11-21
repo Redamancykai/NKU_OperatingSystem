@@ -29,14 +29,17 @@ kern_entry:
     csrw    satp, t0
     # 使用 sfence.vma 指令刷新 TLB
     sfence.vma
-    # 从此，我们给内核搭建出了一个完美的虚拟内存空间！
-    #nop # 可能映射的位置有些bug。。插入一个nop
-    
-    # 我们在虚拟内存空间中：随意将 sp 设置为虚拟地址！
-    lui sp, %hi(bootstacktop)
 
-    # 我们在虚拟内存空间中：随意跳转到虚拟地址！
-    # 跳转到 kern_init
+    # 先跳到高地址，再撤销低地址取指使用的临时恒等映射。
+    lui t0, %hi(boot_vm_entry)
+    addi t0, t0, %lo(boot_vm_entry)
+    jr t0
+boot_vm_entry:
+    la t0, boot_page_table_sv39
+    sd zero, 2 * 8(t0)
+    sfence.vma
+
+    lui sp, %hi(bootstacktop)
     lui t0, %hi(kern_init)
     addi t0, t0, %lo(kern_init)
     jr t0
@@ -56,10 +59,11 @@ bootstacktop:
     .global boot_page_table_sv39
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
-    # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
-    .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
+    # 根页表第 2 项将 0x80000000 临时恒等映射到 0x80000000（1 GiB）。
+    .zero 8 * 2
+    .quad (0x80000 << 10) | 0xcf # VRWXAD
+    .zero 8 * 508
+    # 根页表第 511 项将 0xffffffffc0000000 映射到 0x80000000（1 GiB）。
     .quad (0x80000 << 10) | 0xcf # VRWXAD
 
     .global boot_hartid

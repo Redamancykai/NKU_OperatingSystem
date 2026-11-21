@@ -239,7 +239,7 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
         set_page_ref(page, 1);
         uintptr_t pa = page2pa(page);
         memset(KADDR(pa), 0, PGSIZE);
-        *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        *pdep1 = ptd_create(page2ppn(page));
     }
     pde_t *pdep0 = &((pte_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
     if (!(*pdep0 & PTE_V))
@@ -252,7 +252,7 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
         set_page_ref(page, 1);
         uintptr_t pa = page2pa(page);
         memset(KADDR(pa), 0, PGSIZE);
-        *pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);
+        *pdep0 = ptd_create(page2ppn(page));
     }
     return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
 }
@@ -391,7 +391,7 @@ static void check_pgdir(void)
     assert((ptep = get_pte(boot_pgdir_va, PGSIZE, 0)) != NULL);
     assert(*ptep & PTE_U);
     assert(*ptep & PTE_W);
-    assert(boot_pgdir_va[0] & PTE_U);
+    assert((boot_pgdir_va[0] & (PTE_V | PTE_R | PTE_W | PTE_X | PTE_U | PTE_A | PTE_D)) == PTE_V);
     assert(page_ref(p2) == 1);
 
     assert(page_insert(boot_pgdir_va, p1, PGSIZE, 0) == 0);
@@ -424,16 +424,18 @@ static void check_pgdir(void)
 
 static void check_boot_pgdir(void)
 {
-    size_t nr_free_store;
-    pte_t *ptep;
-    int i;
+    size_t nr_free_store = nr_free_pages();
 
-    nr_free_store = nr_free_pages();
-
-    for (i = ROUNDDOWN(KERNBASE, PGSIZE); i < npage * PGSIZE; i += PGSIZE)
+    // The boot kernel mapping uses a 1 GiB leaf in the root page table.
+    const uintptr_t offset_mask = ((uintptr_t)1 << PDX1SHIFT) - 1;
+    const pde_t leaf_flags = PTE_V | PTE_R | PTE_W | PTE_X;
+    for (uintptr_t pa = nbase * PGSIZE; pa < npage * PGSIZE; pa += PGSIZE)
     {
-        assert((ptep = get_pte(boot_pgdir_va, (uintptr_t)KADDR(i), 0)) != NULL);
-        assert(PTE_ADDR(*ptep) == i);
+        uintptr_t va = (uintptr_t)KADDR(pa);
+        pde_t leaf = boot_pgdir_va[PDX1(va)];
+        assert((leaf & leaf_flags) == leaf_flags);
+        assert((PDE_ADDR(leaf) & offset_mask) == 0);
+        assert(PDE_ADDR(leaf) + (va & offset_mask) == pa);
     }
 
     assert(boot_pgdir_va[0] == 0);
