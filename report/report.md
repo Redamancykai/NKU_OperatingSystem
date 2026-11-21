@@ -153,6 +153,46 @@ int another_function(int arg);
 
 ---
 
+### 功能模块二 · 进程创建与初始化
+
+**负责人** 黄子恒（2412414）
+
+#### 模块功能描述
+
+本模块在 [`code/kern/process/proc.c`](../code/kern/process/proc.c#L221) 的 `LAB4 function2 2412414` 区块实现内核线程创建和初始化。启动时，`proc_init()` 先用一个 PCB 表示正在运行的 `idleproc`，再创建可供调度的 `initproc`。创建链路为 `proc_init() → kernel_thread() → do_fork()`。新线程的内核栈和执行现场由模块二准备，随后由调度器切换执行。
+
+| 函数 | 实现要点 |
+|---|---|
+| `alloc_proc()` | 分配并初始化 PCB。初始状态为 `PROC_UNINIT`，PID 为 `-1`，页表物理地址为 `boot_pgdir_pa`。分配失败时返回 `NULL`。 |
+| `copy_mm()` | 当前实验创建内核线程，父子线程共享启动页表，`mm` 保持为 `NULL`。该路径返回 `0`。 |
+| `copy_thread()` | 在子线程内核栈高端保存中断帧副本并将 `a0` 清零。设置 `context.ra` 指向 `forkret`，`context.sp` 指向帧副本。帧中的 `gpr.sp` 用于 `sret` 后的实际执行。 |
+| `do_fork()` | 准备 PCB、内核栈和首次运行现场。在本地中断保护下分配 PID、登记线程并更新计数，随后唤醒。失败时返回相应错误码并回收本次已取得的资源。 |
+| `kernel_thread()` | 通过 `s0`、`s1` 和 `epc` 传递入口函数、参数和汇编入口，以 `SPP`、`SPIE` 和 `SIE` 设置首次返回状态。创建标志加入 `CLONE_VM`，创建结果原样返回。 |
+| `proc_init()` | 初始化进程链表和 PID 哈希表。PID 为 `0` 的 `idleproc` 复用启动栈并成为 `current`，PID 为 `1` 的 `initproc` 通过已有创建链登记并进入就绪态。 |
+
+#### 最终提示词与实现迭代
+
+[模块二的六份最终 Prompt 与 Spec](prompt.md#功能模块二进程创建与初始化)按实际生成顺序编排。每个函数先确定源码依赖、接口签名和可观察的前后置条件，再单独生成并验证。第一轮细化了 `alloc_proc()` 的验证要求，使用预先填充的内存检查成功路径，并模拟分配失败。随后补齐 `copy_mm()` 和 `copy_thread()`，再验证 `do_fork()` 的登记与失败回收，最后接入 `kernel_thread()` 和 `proc_init()`。
+
+`copy_thread()` 的规格分别描述了切换时和恢复后的两个栈指针。独立 QEMU 用例分别用零值和显式 `esp` 执行了实际的 `sret`，两条路径均恢复到预期栈位置。`do_fork()` 的用例覆盖了进程数达到上限、PCB 分配失败、内核栈分配失败和 `copy_mm()` 返回错误。最后一项由临时替身触发，实际观察到先释放栈、再释放 PCB。临时宿主测试曾因缺少 `kern/debug` 头文件搜索路径而编译失败，补齐测试命令的包含路径后通过。
+
+#### B 的联调记录
+
+测试在 WSL Ubuntu 24.04 中进行，使用 RISC-V 交叉工具链、`qemu-system-riscv64` 和 `gdb-multiarch`。
+
+| 验证项 | 实际执行与结果 |
+|---|---|
+| 目标文件与整核构建 | 在 `code/` 下执行 `make obj/kern/process/proc.o` 和 `make`，均成功，生成 `bin/ucore.img`。 |
+| 线程初态及首次切换 | 独立 QEMU 用例准备启动页表和测试分配器，运行当前的模块二代码及现有调度、恢复汇编。实测 `current == idleproc`、`idleproc->need_resched` 已置位、`find_proc(1) == initproc`、`initproc` 已就绪且进程总数为 `2`。首次切换进入 `init_main()`，输出 `this initproc, pid = 1, name = "init"` 和 `To U: "Hello world!!".`。 |
+| 原项目启动 | `timeout 5s make qemu` 只观察到 OpenSBI 输出。用 QEMU 的 `-d int` 跟踪确认，写入 `satp` 后在 `0x80200038` 发生取指页故障。该地址对应下一条 `sfence.vma`，故障发生在 `kern_init()` 之前。 |
+| 正式评分 | 使用 `make grade GDB=gdb-multiarch`，并通过命令行指定临时评分目录。评分副本构建成功，运行未到达三个评分用例，脚本报告 `Total Score: 0/30`。 |
+
+评分副本编译时，[现有调度用例](../code/tools/test_lab4.c#L68) 向 `kernel_thread()` 传入了 `void (*)(void *)`。接口声明的入口参数类型为 `int (*)(void *)`。当前工具链报告类型警告后完成编译。
+
+`entry.S` 的启动页表只建立了高地址映射。写入 `satp` 的那一刻，CPU 仍在低地址执行启动代码，下一条指令无法取到。启动问题和复现信息应按 [联调交接约定](成员C开发交接.md#启动问题与介入条件)交给 A 核对。启动恢复后，再记录整核 QEMU 输出、三项评分标记和总分，并配合 C 复测双线程轮转、空闲回退和调度中的中断恢复。联调提交号以组内仓库记录为准。
+
+---
+
 ### 练习：[练习标题]
 
 **负责人：** [学号-姓名]
