@@ -15,10 +15,13 @@ enum proc_state
     PROC_ZOMBIE,     // almost dead, and wait parent proc to reclaim his resource
 };
 
+// 线程切换时保存的寄存器
+// 因为线程切换在一个函数当中，所以编译器会自动帮助我们生成保存和恢复调用者保存寄存器的代码
+// 在实际的进程切换过程中我们只需要保存被调用者保存寄存器即可
 struct context
 {
-    uintptr_t ra;
-    uintptr_t sp;
+    uintptr_t ra; // 恢复后通过 ret 跳转到哪里
+    uintptr_t sp; // 恢复后使用哪个栈、栈中的哪个位置
     uintptr_t s0;
     uintptr_t s1;
     uintptr_t s2;
@@ -41,22 +44,23 @@ extern list_entry_t proc_list;
 
 struct proc_struct
 {
-    enum proc_state state;        // Process state
-    int pid;                      // Process ID
-    int runs;                     // the running times of Proces
-    uintptr_t kstack;             // Process kernel stack
-    volatile bool need_resched;   // bool value: need to be rescheduled to release CPU?
+    enum proc_state state;        // Process state 调度器选择 PROC_RUNNABLE 的线程
+    int pid;                      // Process ID 通过 find_proc(pid) 查找
+    int runs;                     // the running times of Proces 被调度选中的次数，schedule() 中执行 next->runs++
+    uintptr_t kstack;             // Process kernel stack 新建线程的内核栈是 8KiB
+    volatile bool need_resched;   // bool value: need to be rescheduled to release CPU? cpu_idle() 检查它并调用 schedule()
     struct proc_struct *parent;   // the parent process
     struct mm_struct *mm;         // Process's memory management field
-    struct context context;       // Switch here to run process
-    struct trapframe *tf;         // Trap frame for current interrupt
+    struct context context;       // Switch here to run process 内核线程切换时恢复执行
+    struct trapframe *tf;         // Trap frame for current interrupt 陷入返回，以及构造新线程首次执行现场
     uintptr_t pgdir;              // the base addr of Page Directroy Table(PDT)
     uint32_t flags;               // Process flag
     char name[PROC_NAME_LEN + 1]; // Process name
-    list_entry_t list_link;       // Process link list
-    list_entry_t hash_link;       // Process hash list
+    list_entry_t list_link;       // Process link list 把控制块接入进程链表，便于遍历、调度
+    list_entry_t hash_link;       // Process hash list 把控制块接入按 PID 组织的哈希桶，便于查找
 };
 
+// 根据线程控制块中的链表节点地址，反推出整个 proc_struct 的地址
 #define le2proc(le, member) \
     to_struct((le), struct proc_struct, member)
 

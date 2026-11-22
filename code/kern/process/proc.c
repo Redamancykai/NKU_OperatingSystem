@@ -182,10 +182,11 @@ find_proc(int pid)
 static int
 setup_kstack(struct proc_struct *proc)
 {
+    // 申请8KiB空间
     struct Page *page = alloc_pages(KSTACKPAGE);
     if (page != NULL)
     {
-        proc->kstack = (uintptr_t)page2kva(page);
+        proc->kstack = (uintptr_t)page2kva(page); // 取得这段内存对应的内核虚拟地址
         return 0;
     }
     return -E_NO_MEM;
@@ -222,16 +223,17 @@ init_main(void *arg)
 static struct proc_struct *
 alloc_proc(void)
 {
+    // kmalloc() 申请一块足够存放 proc_struct 的内存，返回其地址
     struct proc_struct *proc = kmalloc(sizeof(*proc));
     if (proc == NULL)
     {
         return NULL;
     }
-
+    // 将整个控制块清零得到初始值
     memset(proc, 0, sizeof(*proc));
     proc->state = PROC_UNINIT;
     proc->pid = -1;
-    proc->pgdir = boot_pgdir_pa;
+    proc->pgdir = boot_pgdir_pa; // 使用已建立的内核根页表，这里保存的是根页表物理地址
     list_init(&proc->list_link);
     list_init(&proc->hash_link);
     return proc;
@@ -249,15 +251,16 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
 {
-    proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE) - 1;
+    proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE) - 1; // 在栈顶留出中断帧空间
     *proc->tf = *tf;
     proc->tf->gpr.a0 = 0;
     proc->tf->gpr.sp = esp != 0 ? esp : (uintptr_t)proc->tf;
-
+    // 准备首次上下文切换的入口和栈
     proc->context.ra = (uintptr_t)forkret;
     proc->context.sp = (uintptr_t)proc->tf;
 }
 
+// 我们用复制进程的方式来创建新的进程
 int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
 {
@@ -265,26 +268,28 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     {
         return -E_NO_FREE_PROC;
     }
-
+    // 分配进程控制块
     struct proc_struct *proc = alloc_proc();
     if (proc == NULL)
     {
         return -E_NO_MEM;
     }
     proc->parent = current;
-
+    // 分配独立的内核栈
     int ret = setup_kstack(proc);
     if (ret != 0)
     {
         goto free_proc;
     }
+    // 处理地址空间
     ret = copy_mm(clone_flags, proc);
     if (ret != 0)
     {
         goto free_kstack;
     }
+    // 准备新线程第一次运行的现场
     copy_thread(proc, stack, tf);
-
+    // 保存当前中断状态，分配合法pid，加入全局线程链表
     bool intr_flag;
     local_intr_save(intr_flag);
     int pid = get_pid();
@@ -293,7 +298,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     list_add(&proc_list, &proc->list_link);
     nr_process++;
     local_intr_restore(intr_flag);
-
+    // 唤醒线程
     wakeup_proc(proc);
     return pid;
 
@@ -304,14 +309,16 @@ free_proc:
     return ret;
 }
 
+// kernel_thread() 准备一个内核线程的初始执行现场，再调用 do_fork() 创建线程、
+// fn是线程要执行的函数，arg是传给fn的参数，clone_flags是创建选项，控制资源共享等行为
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
 {
-    struct trapframe tf = {0};
+    struct trapframe tf = {0}; // 初始构造一个现场
     tf.gpr.s0 = (uintptr_t)fn;
     tf.gpr.s1 = (uintptr_t)arg;
-    tf.epc = (uintptr_t)kernel_thread_entry;
-    tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~(uintptr_t)SSTATUS_SIE;
+    tf.epc = (uintptr_t)kernel_thread_entry; // 见 entry.S
+    tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~(uintptr_t)SSTATUS_SIE; // 恢复初始现场期间：SIE = 0。执行 sret 后：进入 S 模式，SIE = 1
 
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
@@ -319,20 +326,23 @@ kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
 void
 proc_init(void)
 {
+    // 准备线程名称
     static const char idle_name[PROC_NAME_LEN + 1] = "idle";
     static const char init_name[PROC_NAME_LEN + 1] = "init";
-
+    // 初始化进程链表头节点，然后初始化哈希链表的每个桶
+    // 每个桶都是一条循环双向链表，后续可以通过 PID 找到所属桶，再在桶中查找控制块
     list_init(&proc_list);
     for (size_t i = 0; i < HASH_LIST_SIZE; i++)
     {
         list_init(&hash_list[i]);
     }
-
+    // 分配并初始化控制块
     idleproc = alloc_proc();
     if (idleproc == NULL)
     {
         panic("cannot allocate idleproc\n");
     }
+    // 初始设置：指定pid为0，设置为可运行状态，复用启动栈，请求一次调度，设置名称，增加线程数量，登记为当前线程
     idleproc->pid = 0;
     idleproc->state = PROC_RUNNABLE;
     idleproc->kstack = (uintptr_t)bootstack;
