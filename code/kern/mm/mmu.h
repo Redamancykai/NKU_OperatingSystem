@@ -24,6 +24,7 @@
 // |       PPN[1]        |      PPN[0]     |Reserved|D|A|G|U|X|W|R|V|
 // +---------12----------+-----------------+--------+---------------+
 
+// 下面三个宏用于提取三个索引，先右移，通过按位与保留低9位
 // page directory index
 #define PDX1(la) ((((uintptr_t)(la)) >> PDX1SHIFT) & 0x1FF)
 #define PDX0(la) ((((uintptr_t)(la)) >> PDX0SHIFT) & 0x1FF)
@@ -32,15 +33,18 @@
 #define PTX(la) ((((uintptr_t)(la)) >> PTXSHIFT) & 0x1FF)
 
 // page number field of address
-#define PPN(la) (((uintptr_t)(la)) >> PTXSHIFT)
+#define PPN(la) (((uintptr_t)(la)) >> PTXSHIFT) // 去掉偏移，保留页号
 
 // offset in page
-#define PGOFF(la) (((uintptr_t)(la)) & 0xFFF)
+#define PGOFF(la) (((uintptr_t)(la)) & 0xFFF) // 保留偏移
 
 // construct linear address from indexes and offset
-#define PGADDR(d1, d0, t, o) ((uintptr_t)((d1) << PDX1SHIFT |(d0) << PDX0SHIFT | (t) << PTXSHIFT | (o)))
+#define PGADDR(d1, d0, t, o) ((uintptr_t)((d1) << PDX1SHIFT |(d0) << PDX0SHIFT | (t) << PTXSHIFT | (o))) // 拼接地址
 
 // address in page table or page directory entry
+// 从页表项中提取物理地址
+// 1. 先清除低10位的标志位信息
+// 2. 再左移 2 位，把页号放回物理地址中应处的位置，因为同一个物理页号，在物理地址中从第 12 位开始，在页表项中从第 10 位开始
 #define PTE_ADDR(pte)   (((uintptr_t)(pte) & ~0x3FF) << (PTXSHIFT - PTE_PPN_SHIFT))
 #define PDE_ADDR(pde)   PTE_ADDR(pde)
 

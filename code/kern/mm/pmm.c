@@ -222,26 +222,35 @@ void pmm_init(void)
 // get_pte - get pte and return the kernel virtual address of this pte for la
 //        - if the PT contians this pte didn't exist, alloc a page for PT
 // parameter:
-//  pgdir:  the kernel virtual base address of PDT
+//  pgdir:  the kernel virtual base address of PDT 指向根页表的指针
 //  la:     the linear address need to map
 //  create: a logical value to decide if alloc a page for PT
 // return vaule: the kernel virtual address of this pte
+
+// get_pte() 找到页表项的位置
 pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
 {
+    // 先通过最高级索引定位
     pde_t *pdep1 = &pgdir[PDX1(la)];
+    // 检查表项是否有效
     if (!(*pdep1 & PTE_V))
     {
         struct Page *page;
+        // 表项无效，检查是否允许创建下一级页表
         if (!create || (page = alloc_page()) == NULL)
         {
             return NULL;
         }
-        set_page_ref(page, 1);
-        uintptr_t pa = page2pa(page);
-        memset(KADDR(pa), 0, PGSIZE);
-        *pdep1 = ptd_create(page2ppn(page));
+        // 如果允许创建新一级页表
+        set_page_ref(page, 1);                  // 设置新页表页的引用计数
+        uintptr_t pa = page2pa(page);           // 获得其物理地址
+        memset(KADDR(pa), 0, PGSIZE);           // 通过内核虚拟地址访问并清零
+        *pdep1 = ptd_create(page2ppn(page));    // 把它的物理页号写入上一级目录项
     }
+    // 进入下一级页表
+    // 读出目录项 → 提取下一级页表的物理地址 → 转成内核虚拟地址 → 当作表项数组 → 用 PDX0 取其中一项
     pde_t *pdep0 = &((pte_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
+    // 重复一次检查、分配、返回的过程
     if (!(*pdep0 & PTE_V))
     {
         struct Page *page;
@@ -254,17 +263,23 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
         memset(KADDR(pa), 0, PGSIZE);
         *pdep0 = ptd_create(page2ppn(page));
     }
+    // 最后返回页表项指针
     return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
 }
 
 // get_page - get related Page struct for linear address la using PDT pgdir
+
+// get_page() 找到已经映射的物理页
+// 根据 get_pte() 的结果进一步找到对应的 Page
 struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
 {
     pte_t *ptep = get_pte(pgdir, la, 0);
+    // 把页表项指针传回给调用者
     if (ptep_store != NULL)
     {
         *ptep_store = ptep;
     }
+    // 存在有效映射，返回物理页结构
     if (ptep != NULL && *ptep & PTE_V)
     {
         return pte2page(*ptep);
@@ -274,14 +289,18 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
 
 //LAB4 function1 2411268
 
+// sync_page_table() 同步 CPU 地址翻译状态
+// TLB 中可能还存在旧缓存
 static void sync_page_table(pde_t *pgdir, uintptr_t la, bool directory_changed)
 {
     // The framework's SFENCE.VMA helpers do not include compiler barriers.
     asm volatile("" ::: "memory");
+    // 目录变化时，整体刷新
     if (directory_changed)
     {
         flush_tlb();
     }
+    // 只改末级表项时，针对地址刷新
     else
     {
         tlb_invalidate(pgdir, la);
@@ -289,20 +308,24 @@ static void sync_page_table(pde_t *pgdir, uintptr_t la, bool directory_changed)
     asm volatile("" ::: "memory");
 }
 
+// page_insert() 建立或替换映射
+// pgdir: 在哪套页表建立映射 page: 要映射到哪个物理页 la: 要映射到哪个虚拟页 perm: 映射赋予什么权限
 int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
 {
-    pte_t *ptep;
-    struct Page *old_page = get_page(pgdir, la, &ptep);
-    bool directory_changed = ptep == NULL;
+    pte_t *ptep;                                        
+    struct Page *old_page = get_page(pgdir, la, &ptep); // 原来映射的物理页，没有有效映射则为 NULL
+    bool directory_changed = ptep == NULL;              // 末级页表项的地址，中间级页表不完整则为 NULL，此时需要创建中间级页表
 
     if (directory_changed)
     {
         pde_t *root_entry = &pgdir[PDX1(la)];
-        pde_t saved_entry = *root_entry;
+        pde_t saved_entry = *root_entry; // 后面失败可以回滚
+        // 重新查找末级表项，最后一个参数为 1，表示允许创建缺失的中间级页表
         ptep = get_pte(pgdir, la, 1);
         if (ptep == NULL)
         {
             // The first page-table allocation can succeed before the second fails.
+            // 中间页表成功了，此时根页表已经被修改了，此时需要回收页表
             if (!(saved_entry & PTE_V) && (*root_entry & PTE_V))
             {
                 struct Page *table_page = pde2page(*root_entry);
@@ -313,14 +336,14 @@ int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
             return -E_NO_MEM;
         }
     }
-
+    // 如果原来映射的物理页与目标物理页不同，就为目标页增加一次引用
     if (old_page != page)
     {
         page_ref_inc(page);
     }
     *ptep = pte_create(page2ppn(page), perm);
     sync_page_table(pgdir, la, directory_changed);
-
+    // 原来的旧页如果确实存在并且被替换了，且引用减1后就没有引用了，此时可以释放旧物理页
     if (old_page != NULL && old_page != page && page_ref_dec(old_page) == 0)
     {
         free_page(old_page);
@@ -328,8 +351,10 @@ int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
     return 0;
 }
 
+// page_remove() 撤销虚拟地址 la 所在页的映射
 void page_remove(pde_t *pgdir, uintptr_t la)
 {
+    // 根据地址信息查找原映射
     pte_t *ptep;
     struct Page *page = get_page(pgdir, la, &ptep);
     if (page == NULL)
@@ -337,6 +362,8 @@ void page_remove(pde_t *pgdir, uintptr_t la)
         return;
     }
 
+    // 开始做 remove 操作
+    // 清空页表项 → 同步TLB → 视情况释放物理页
     *ptep = 0;
     sync_page_table(pgdir, la, 0);
     if (page_ref_dec(page) == 0)
