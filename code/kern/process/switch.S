@@ -6,6 +6,7 @@
     .type switch_to, @function
 switch_to:
     # Match the field order in struct context.
+    # a0 保存 idleproc 的 context，a1 保存 initproc 的 context
     STORE ra,  0*REGBYTES(a0)
     STORE sp,  1*REGBYTES(a0)
     STORE s0,  2*REGBYTES(a0)

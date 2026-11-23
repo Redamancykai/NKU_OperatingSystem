@@ -376,6 +376,7 @@ void proc_run(struct proc_struct *proc)
     local_intr_save(intr_flag);
     struct proc_struct *prev = current;
     current = proc;
+    // 设置 CPU 的分页控制寄存器
     write_csr(satp, ((uintptr_t)SATP_MODE_SV39 << 60) |
                     (proc->pgdir >> RISCV_PGSHIFT));
     flush_tlb();
