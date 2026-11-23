@@ -10,7 +10,8 @@
 struct mm_struct;
 
 // the virtual continuous memory area(vma), [vm_start, vm_end), 
-// addr belong to a vma means  vma.vm_start<= addr <vma.vm_end 
+// addr belong to a vma means  vma.vm_start<= addr <vma.vm_end
+// vma 描述一段连续虚拟地址区域及其对应的权限(flags)
 struct vma_struct {
     struct mm_struct *vm_mm; // the set of vma using the same PDT 
     uintptr_t vm_start;      // start addr of vma      
@@ -28,9 +29,9 @@ struct vma_struct {
 
 // the control struct for a set of vma using the same PDT
 struct mm_struct {
-    list_entry_t mmap_list;        // linear list link which sorted by start addr of vma
-    struct vma_struct *mmap_cache; // current accessed vma, used for speed purpose
-    pde_t *pgdir;                  // the PDT of these vma
+    list_entry_t mmap_list;        // linear list link which sorted by start addr of vma 连接各个 vma
+    struct vma_struct *mmap_cache; // current accessed vma, used for speed purpose 缓存最近找到的 vma 加速查询
+    pde_t *pgdir;                  // the PDT of these vma 根页表的内核虚拟地址
     int map_count;                 // the count of these vma
     void *sm_priv;                 // the private data for swap manager
 };

@@ -164,7 +164,7 @@ find_proc(int pid)
 {
     if (0 < pid && pid < MAX_PID)
     {
-        list_entry_t *list = hash_list + pid_hashfn(pid), *le = list;
+        list_entry_t *list = hash_list + pid_hashfn(pid), *le = list; // 根据pid找到对应的哈希桶
         while ((le = list_next(le)) != list)
         {
             struct proc_struct *proc = le2proc(le, hash_link);

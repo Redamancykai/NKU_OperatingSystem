@@ -50,7 +50,7 @@ struct proc_struct
     uintptr_t kstack;             // Process kernel stack 新建线程的内核栈是 8KiB
     volatile bool need_resched;   // bool value: need to be rescheduled to release CPU? cpu_idle() 检查它并调用 schedule()
     struct proc_struct *parent;   // the parent process
-    struct mm_struct *mm;         // Process's memory management field
+    struct mm_struct *mm;         // Process's memory management field 定义在 vmm.h
     struct context context;       // Switch here to run process 内核线程切换时恢复执行
     struct trapframe *tf;         // Trap frame for current interrupt 陷入返回，以及构造新线程首次执行现场
     uintptr_t pgdir;              // the base addr of Page Directroy Table(PDT)

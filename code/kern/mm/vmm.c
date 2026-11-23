@@ -100,7 +100,9 @@ find_vma(struct mm_struct *mm, uintptr_t addr)
     struct vma_struct *vma = NULL;
     if (mm != NULL)
     {
+        // 优先查询缓存
         vma = mm->mmap_cache;
+        // 缓存未命中，遍历 vma 链表
         if (!(vma != NULL && vma->vm_start <= addr && vma->vm_end > addr))
         {
             bool found = 0;
